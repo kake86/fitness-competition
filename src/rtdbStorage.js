@@ -1,17 +1,28 @@
-import { ref, get, set, onValue, remove } from 'firebase/database';
-import { signInAnonymously } from 'firebase/auth';
+import { ref, get, set, onValue, remove, runTransaction } from 'firebase/database';
+import { signInWithPopup, signOut as firebaseSignOut, onAuthStateChanged, GoogleAuthProvider } from 'firebase/auth';
 import { rtdb, auth } from './firebase';
 
 const COMPETITION_PATH = 'competition';
 
-export async function ensureAuth() {
-  if (!auth.currentUser) {
-    await signInAnonymously(auth);
-  }
+/** Sign in with Google. Requires user interaction (popup). */
+export async function signInWithGoogle() {
+  const provider = new GoogleAuthProvider();
+  await signInWithPopup(auth, provider);
 }
 
+/** Sign out the current user. */
+export async function signOut() {
+  await firebaseSignOut(auth);
+}
+
+/** Subscribe to auth state changes. Callback receives user or null. Returns unsubscribe function. */
+export function onAuthReady(callback) {
+  return onAuthStateChanged(auth, callback);
+}
+
+/** Load competition data. Requires auth.currentUser. */
 export async function loadFromRTDB() {
-  await ensureAuth();
+  if (!auth.currentUser) throw new Error('Must be signed in to load data');
   const dataRef = ref(rtdb, COMPETITION_PATH);
   const snap = await get(dataRef);
   const data = snap.val() || {};
@@ -32,8 +43,24 @@ export function subscribeToRTDB(callback) {
   });
 }
 
+/** Add a player using transaction to prevent race conditions (one at a time). */
+export async function addPlayerToRTDB(name) {
+  if (!auth.currentUser) throw new Error('Must be signed in to add player');
+  const dataRef = ref(rtdb, COMPETITION_PATH);
+  await runTransaction(dataRef, (current) => {
+    const data = current.val() || {};
+    const ops = data.operatives ? Object.values(data.operatives) : [];
+    if (ops.includes(name)) return; // already exists
+    ops.push(name);
+    const operatives = {};
+    ops.forEach((p, i) => { operatives[i] = p; });
+    return { ...data, operatives, scores: data.scores || {} };
+  });
+}
+
+/** Save full competition state (players + scores). Used for score updates, delete player, etc. */
 export async function saveToRTDB(players, scores) {
-  await ensureAuth();
+  if (!auth.currentUser) throw new Error('Must be signed in to save');
   const dataRef = ref(rtdb, COMPETITION_PATH);
   const operatives = {};
   players.forEach((p, i) => { operatives[i] = p; });
@@ -41,7 +68,7 @@ export async function saveToRTDB(players, scores) {
 }
 
 export async function deleteFromRTDB() {
-  await ensureAuth();
+  if (!auth.currentUser) throw new Error('Must be signed in to delete');
   const dataRef = ref(rtdb, COMPETITION_PATH);
   await remove(dataRef);
 }
