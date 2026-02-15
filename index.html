@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover" />
+    <meta name="description" content="Fitness Competition Tracker - Compare weekly steps, workouts, sleep & hydration with friends. Add to home screen for quick access!" />
+    <meta name="theme-color" content="#0D0D0D" />
+    <!-- Open Graph / WhatsApp link preview -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Fitness Competition Tracker" />
+    <meta property="og:description" content="Track & compare weekly fitness with friends. Steps, workouts, sleep, hydration - who will win?" />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta property="og:url" content="" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Fitness Tracker" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>CS:GO Tracker</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // Storage API polyfill for CS:GO Tracker
+      window.storage = {
+        async get(key) {
+          const val = localStorage.getItem(key);
+          return val ? { value: val } : null;
+        },
+        async set(key, value) {
+          localStorage.setItem(key, value);
+        },
+        async delete(key) {
+          localStorage.removeItem(key);
+        }
+      };
+
+      // Register Service Worker for PWA
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+              console.log('SW registered: ', registration);
+            })
+            .catch((registrationError) => {
+              console.log('SW registration failed: ', registrationError);
+            });
+        });
+      }
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

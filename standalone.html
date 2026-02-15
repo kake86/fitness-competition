@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌟 My Planning Tool 🌟</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Comic Sans MS', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+            padding: 20px;
+        }
+
+        .app {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .app-header {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .app-title {
+            font-size: 2.5em;
+            color: #667eea;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .view-switcher {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+        }
+
+        .view-button {
+            font-size: 1.3em;
+            padding: 15px 30px;
+            border: 3px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            min-width: 150px;
+            font-family: 'Comic Sans MS', sans-serif;
+        }
+
+        .view-button:hover {
+            background: #f0f0ff;
+            transform: scale(1.05);
+        }
+
+        .view-button.active {
+            background: #667eea;
+            color: white;
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .app-main {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+            margin-bottom: 25px;
+            min-height: 500px;
+        }
+
+        .date-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #f0f0f0;
+        }
+
+        .date-nav-button {
+            font-size: 2em;
+            width: 60px;
+            height: 60px;
+            border: 3px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .date-nav-button:hover {
+            background: #667eea;
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .date-title {
+            font-size: 2em;
+            color: #667eea;
+            flex: 1;
+            text-align: center;
+        }
+
+        .add-event-button {
+            font-size: 1.5em;
+            padding: 20px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            margin-bottom: 25px;
+            width: 100%;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(102, 126, 234, 0.3);
+            font-family: 'Comic Sans MS', sans-serif;
+        }
+
+        .add-event-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .event-form {
+            background: #f8f9ff;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            border: 2px solid #e0e5ff;
+            display: none;
+        }
+
+        .event-form.show {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 1.2em;
+            color: #667eea;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.2em;
+            border: 3px solid #e0e5ff;
+            border-radius: 10px;
+            font-family: 'Comic Sans MS', sans-serif;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .submit-button, .cancel-button {
+            flex: 1;
+            padding: 15px;
+            font-size: 1.2em;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-family: 'Comic Sans MS', sans-serif;
+        }
+
+        .submit-button {
+            background: #667eea;
+            color: white;
+        }
+
+        .cancel-button {
+            background: #e0e5ff;
+            color: #667eea;
+        }
+
+        .event-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+            padding: 20px;
+            background: #f8f9ff;
+            border: 3px solid #e0e5ff;
+            border-radius: 15px;
+            margin-bottom: 15px;
+        }
+
+        .event-item.completed {
+            opacity: 0.7;
+            background: #f0f0f0;
+        }
+
+        .event-item.completed .event-title {
+            text-decoration: line-through;
+            color: #999;
+        }
+
+        .event-checkbox {
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            accent-color: #667eea;
+        }
+
+        .event-content {
+            flex: 1;
+        }
+
+        .event-title {
+            font-size: 1.4em;
+            color: #333;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+
+        .event-time {
+            font-size: 1em;
+            color: #667eea;
+            background: white;
+            padding: 5px 12px;
+            border-radius: 8px;
+            border: 2px solid #e0e5ff;
+            display: inline-block;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+            font-size: 1.3em;
+        }
+
+        .app-footer {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .footer-button {
+            padding: 12px 25px;
+            font-size: 1.1em;
+            border: 3px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            font-family: 'Comic Sans MS', sans-serif;
+        }
+
+        .footer-button:hover {
+            background: #667eea;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header class="app-header">
+            <h1 class="app-title">🌟 My Planning Tool 🌟</h1>
+            <div class="view-switcher">
+                <button class="view-button active" onclick="setView('daily')">📅 Daily</button>
+                <button class="view-button" onclick="setView('weekly')">📆 Weekly</button>
+            </div>
+        </header>
+
+        <main class="app-main" id="appMain">
+            <div id="dailyView">
+                <div class="date-header">
+                    <button class="date-nav-button" onclick="changeDate(-1)">←</button>
+                    <h2 class="date-title" id="dateTitle">Today</h2>
+                    <button class="date-nav-button" onclick="changeDate(1)">→</button>
+                </div>
+                <button class="add-event-button" onclick="showForm()">➕ Add Event</button>
+                <div class="event-form" id="eventForm">
+                    <div class="form-group">
+                        <label>What do you want to do?</label>
+                        <input type="text" id="eventTitle" class="form-input" placeholder="e.g., Do homework, Play outside">
+                    </div>
+                    <div class="form-group">
+                        <label>What time? (optional)</label>
+                        <input type="time" id="eventTime" class="form-input">
+                    </div>
+                    <div class="form-actions">
+                        <button class="submit-button" onclick="addEvent()">✓ Add</button>
+                        <button class="cancel-button" onclick="hideForm()">Cancel</button>
+                    </div>
+                </div>
+                <div id="eventsList"></div>
+            </div>
+        </main>
+
+        <footer class="app-footer">
+            <button class="footer-button" onclick="saveToFile()">💾 Save to File</button>
+            <button class="footer-button" onclick="loadFromFile()">📁 Load from File</button>
+            <button class="footer-button" onclick="clearAll()">🗑️ Clear All</button>
+        </footer>
+    </div>
+
+    <script>
+        let events = [];
+        let currentDate = new Date().toISOString().split('T')[0];
+        let currentView = 'daily';
+
+        // Load events from localStorage
+        function loadEvents() {
+            const stored = localStorage.getItem('planning-tool-events');
+            if (stored) {
+                const data = JSON.parse(stored);
+                events = data.events || [];
+            }
+            renderEvents();
+        }
+
+        // Save events to localStorage
+        function saveEvents() {
+            localStorage.setItem('planning-tool-events', JSON.stringify({ events }));
+        }
+
+        // Format date display
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            const today = new Date();
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            
+            if (date.toDateString() === today.toDateString()) {
+                return 'Today';
+            } else if (date.toDateString() === tomorrow.toDateString()) {
+                return 'Tomorrow';
+            } else {
+                return date.toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+            }
+        }
+
+        // Format time display
+        function formatTime(timeString) {
+            if (!timeString) return '';
+            const [hours, minutes] = timeString.split(':');
+            const hour = parseInt(hours, 10);
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            const displayHour = hour % 12 || 12;
+            return `${displayHour}:${minutes} ${ampm}`;
+        }
+
+        // Change date
+        function changeDate(days) {
+            const date = new Date(currentDate);
+            date.setDate(date.getDate() + days);
+            currentDate = date.toISOString().split('T')[0];
+            document.getElementById('dateTitle').textContent = formatDate(currentDate);
+            renderEvents();
+        }
+
+        // Show form
+        function showForm() {
+            document.getElementById('eventForm').classList.add('show');
+            document.getElementById('eventTitle').focus();
+        }
+
+        // Hide form
+        function hideForm() {
+            document.getElementById('eventForm').classList.remove('show');
+            document.getElementById('eventTitle').value = '';
+            document.getElementById('eventTime').value = '';
+        }
+
+        // Add event
+        function addEvent() {
+            const title = document.getElementById('eventTitle').value.trim();
+            if (!title) return;
+
+            const event = {
+                id: Date.now().toString(),
+                title: title,
+                time: document.getElementById('eventTime').value || null,
+                date: currentDate,
+                completed: false
+            };
+
+            events.push(event);
+            saveEvents();
+            renderEvents();
+            hideForm();
+        }
+
+        // Toggle complete
+        function toggleComplete(eventId) {
+            const event = events.find(e => e.id === eventId);
+            if (event) {
+                event.completed = !event.completed;
+                saveEvents();
+                renderEvents();
+            }
+        }
+
+        // Render events
+        function renderEvents() {
+            const dayEvents = events
+                .filter(e => e.date === currentDate)
+                .sort((a, b) => {
+                    if (!a.time && !b.time) return 0;
+                    if (!a.time) return 1;
+                    if (!b.time) return -1;
+                    return a.time.localeCompare(b.time);
+                });
+
+            const listEl = document.getElementById('eventsList');
+            
+            if (dayEvents.length === 0) {
+                listEl.innerHTML = '<div class="empty-state"><p>No events for this day yet!</p><p>Click "Add Event" above to get started! ✨</p></div>';
+            } else {
+                listEl.innerHTML = dayEvents.map(event => `
+                    <div class="event-item ${event.completed ? 'completed' : ''}">
+                        <input type="checkbox" class="event-checkbox" ${event.completed ? 'checked' : ''} 
+                               onchange="toggleComplete('${event.id}')">
+                        <div class="event-content">
+                            <div class="event-title">${event.title}</div>
+                            ${event.time ? `<span class="event-time">⏰ ${formatTime(event.time)}</span>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        // Set view
+        function setView(view) {
+            currentView = view;
+            document.querySelectorAll('.view-button').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            // Weekly view not implemented in standalone version
+            if (view === 'weekly') {
+                alert('Weekly view is available in the full React version. Please install Node.js to use all features.');
+            }
+        }
+
+        // Save to file
+        function saveToFile() {
+            const data = JSON.stringify({ events }, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'planning-data.json';
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Load from file
+        function loadFromFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const data = JSON.parse(e.target.result);
+                            events = data.events || [];
+                            saveEvents();
+                            renderEvents();
+                            alert('Events loaded successfully!');
+                        } catch (error) {
+                            alert('Error loading file: ' + error.message);
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
+        }
+
+        // Clear all
+        function clearAll() {
+            if (confirm('Are you sure you want to clear all events? This cannot be undone!')) {
+                events = [];
+                saveEvents();
+                renderEvents();
+            }
+        }
+
+        // Initialize
+        document.getElementById('dateTitle').textContent = formatDate(currentDate);
+        loadEvents();
+    </script>
+</body>
+</html>
