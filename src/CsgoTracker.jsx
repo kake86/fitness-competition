@@ -74,6 +74,40 @@ const toDateStr=(d)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0"
 const getWeekDates=(off=0)=>{const n=new Date(),dy=n.getDay(),m=new Date(n);m.setDate(n.getDate()-((dy===0?7:dy)-1)+off*7);return Array.from({length:7},(_,i)=>{const d=new Date(m);d.setDate(m.getDate()+i);return toDateStr(d);});};
 const sk=(d,p,a)=>`${d}::${p}::${a}`;
 const DAY_LABELS=["MON","TUE","WED","THU","FRI","SAT","SUN"];
+const WEEKLY_WINNER_METRICS = [
+  { id: "weight", label: "WEIGHT", candidateIds: ["weight", "steps"] },
+  { id: "exerciseQuantity", label: "EXERCISE QUANTITY", candidateIds: ["exerciseQuantity", "exercise", "workouts"] },
+];
+
+function parseScoreKey(scoreKey) {
+  const parts = String(scoreKey || "").split("::");
+  if (parts.length !== 3) return null;
+  const [date, person, activityId] = parts;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !person || !activityId) return null;
+  return { date, person, activityId };
+}
+
+function getWeekStartFromDateStr(dateStr) {
+  const [y, m, d] = String(dateStr || "").split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const date = new Date(y, m - 1, d);
+  if (Number.isNaN(date.getTime())) return null;
+  const day = date.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + mondayOffset);
+  return toDateStr(date);
+}
+
+function formatWeekRangeLabel(weekStartStr) {
+  const [y, m, d] = String(weekStartStr || "").split("-").map(Number);
+  if (!y || !m || !d) return weekStartStr;
+  const start = new Date(y, m - 1, d);
+  const end = new Date(y, m - 1, d + 6);
+  const now = new Date();
+  const includeYear = start.getFullYear() !== now.getFullYear() || end.getFullYear() !== now.getFullYear();
+  const dateOpts = includeYear ? { month: "short", day: "numeric", year: "numeric" } : { month: "short", day: "numeric" };
+  return `${start.toLocaleDateString("en-US", dateOpts)} - ${end.toLocaleDateString("en-US", dateOpts)}`;
+}
 
 // Activity-specific max bounds (security: reject absurd values)
 const SCORE_BOUNDS = { steps: 200000, workouts: 100, sleep: 24, hydration: 30, streak: 7 };
@@ -252,6 +286,68 @@ export default function App(){
     ACTIVITIES.forEach(a=>{const pct=getPct(mvpPlayer,a);if(!best||pct>best.pct)best={act:a,pct,total:getWeekTotal(mvpPlayer,a.id)};});
     return best;
   },[mvpPlayer,getPct,getWeekTotal]);
+  const weeklyWinnerHistory=useMemo(()=>{
+    const weekMap = new Map();
+
+    Object.entries(scores).forEach(([scoreKey, rawValue]) => {
+      const parsed = parseScoreKey(scoreKey);
+      if (!parsed) return;
+      const value = Number(rawValue);
+      if (!Number.isFinite(value) || value <= 0) return;
+
+      const weekStart = getWeekStartFromDateStr(parsed.date);
+      if (!weekStart) return;
+
+      if (!weekMap.has(weekStart)) {
+        weekMap.set(weekStart, {
+          metricTotals: new Map(),
+          metricSourceTotals: new Map(),
+        });
+      }
+
+      const weekData = weekMap.get(weekStart);
+      WEEKLY_WINNER_METRICS.forEach((metric) => {
+        if (!metric.candidateIds.includes(parsed.activityId)) return;
+
+        if (!weekData.metricTotals.has(metric.id)) {
+          weekData.metricTotals.set(metric.id, new Map());
+        }
+        const totalsByPlayer = weekData.metricTotals.get(metric.id);
+        totalsByPlayer.set(parsed.person, (totalsByPlayer.get(parsed.person) || 0) + value);
+
+        if (!weekData.metricSourceTotals.has(metric.id)) {
+          weekData.metricSourceTotals.set(metric.id, new Map());
+        }
+        const sourceTotals = weekData.metricSourceTotals.get(metric.id);
+        sourceTotals.set(parsed.activityId, (sourceTotals.get(parsed.activityId) || 0) + value);
+      });
+    });
+
+    return Array.from(weekMap.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([weekStart, weekData]) => {
+        const metrics = WEEKLY_WINNER_METRICS.map((metric) => {
+          const totalsByPlayer = weekData.metricTotals.get(metric.id) || new Map();
+          const topValue = Array.from(totalsByPlayer.values()).reduce((max, val) => Math.max(max, val), 0);
+          const winners = topValue > 0
+            ? Array.from(totalsByPlayer.entries())
+                .filter(([, val]) => val === topValue)
+                .map(([person]) => person)
+                .sort((a, b) => a.localeCompare(b))
+            : [];
+          const sourceTotals = weekData.metricSourceTotals.get(metric.id) || new Map();
+          const sourceId = metric.candidateIds.find((candidateId) => sourceTotals.has(candidateId)) || null;
+
+          return { ...metric, winners, topValue, sourceId };
+        });
+
+        return {
+          weekStart,
+          weekLabel: formatWeekRangeLabel(weekStart),
+          metrics,
+        };
+      });
+  },[scores]);
 
   // Kill feed generator
   const generateKillfeed=useCallback(()=>{
@@ -790,6 +886,7 @@ export default function App(){
             {id:"scoreboard",label:"SCOREBOARD",icon:"☰"},
             {id:"buymenu",label:"LOG DATA",icon:"$"},
             {id:"stats",label:"MATCH STATS",icon:"◊"},
+            {id:"weeklywinners",label:"WEEKLY WINNERS",icon:"★"},
           ].map(t=>(
             <button key={t.id} onClick={()=>{setView(t.id);playClick();}} style={{
               ...btnStyle(view===t.id),flex:1,
@@ -1193,6 +1290,103 @@ export default function App(){
               </div>
             </div>
           </>
+        )}
+
+        {/* ═══ WEEKLY WINNERS VIEW ═══ */}
+        {view==="weeklywinners"&&(
+          <div style={panelStyle}>
+            <div style={panelHead}>
+              <span style={headText}>{theme==="warroom"?"WEEKLY TOP OPERATIVES":"WEEKLY WINNERS"}</span>
+              <span style={{fontSize:9,color:C.textMuted,letterSpacing:1}}>WEIGHT + EXERCISE QUANTITY</span>
+            </div>
+            <div style={{padding:isMobile?10:14}}>
+              {weeklyWinnerHistory.length===0?(
+                <div style={{
+                  padding:"14px 12px",
+                  background:C.bgLight,
+                  border:`1px solid ${C.panelBorder}`,
+                  borderRadius:3,
+                  color:C.textMuted,
+                  fontSize:11,
+                  letterSpacing:1,
+                }}>
+                  No weekly winner history yet. Start logging scores to populate this page.
+                </div>
+              ):(
+                weeklyWinnerHistory.map((week) => {
+                  const isCurrentWeek = week.weekStart === weekDates[0];
+                  return (
+                    <div key={week.weekStart} style={{
+                      padding:"10px 12px",
+                      background:C.bgLight,
+                      border:`1px solid ${C.panelBorder}`,
+                      borderRadius:3,
+                      marginBottom:8,
+                    }}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:10}}>
+                        <div style={{fontSize:11,fontWeight:700,letterSpacing:1.5,color:C.textPrimary}}>
+                          {week.weekLabel}
+                        </div>
+                        <div style={{
+                          fontSize:8,
+                          fontWeight:700,
+                          letterSpacing:1.2,
+                          color:isCurrentWeek?C.orange:C.green,
+                          border:`1px solid ${isCurrentWeek?C.orange:C.green}30`,
+                          background:isCurrentWeek?C.orangeDim+"40":C.greenDim,
+                          borderRadius:2,
+                          padding:"2px 6px",
+                          whiteSpace:"nowrap",
+                        }}>
+                          {isCurrentWeek ? "IN PROGRESS" : "FINAL"}
+                        </div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:8}}>
+                        {week.metrics.map((metric) => {
+                          const hasWinner = metric.topValue > 0;
+                          const isTie = metric.winners.length > 1;
+                          const topValueLabel = metric.topValue.toLocaleString(undefined, { maximumFractionDigits: 2 });
+                          return (
+                            <div key={metric.id} style={{
+                              padding:"8px 10px",
+                              background:C.bg,
+                              border:`1px solid ${C.panelBorder}70`,
+                              borderRadius:2,
+                            }}>
+                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,gap:8}}>
+                                <span style={{fontSize:9,fontWeight:700,letterSpacing:1.2,color:C.textSecondary}}>
+                                  {metric.label}
+                                </span>
+                                {metric.sourceId && metric.sourceId !== metric.id && (
+                                  <span style={{fontSize:7,color:C.textMuted,letterSpacing:1}}>
+                                    via {metric.sourceId.toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                              {hasWinner?(
+                                <>
+                                  <div style={{fontSize:11,fontWeight:700,letterSpacing:1,color:C.textPrimary}}>
+                                    {metric.winners.join(", ")}
+                                  </div>
+                                  <div style={{fontSize:9,color:C.ctBlue,fontWeight:700,letterSpacing:1,marginTop:4}}>
+                                    {isTie?"TIED AT":"TOP TOTAL"}: {topValueLabel}
+                                  </div>
+                                </>
+                              ):(
+                                <div style={{fontSize:9,color:C.textMuted,letterSpacing:1}}>
+                                  No entries this week
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
         )}
 
         {/* ─── FOOTER (Administrator bar — bottom row) ─── */}
