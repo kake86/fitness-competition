@@ -11,6 +11,15 @@ A simple, colorful planning application designed for children to manage their da
 - 💾 **Data Persistence**: Events are automatically saved to your browser's local storage
 - 📁 **File Export/Import**: Save your data to a file or load from a saved file
 
+## Advanced Setup (Supabase + Gemini)
+
+This project supports:
+
+- **Supabase** as a backend provider (Google auth + shared competition state)
+- **Gemini** for AI coaching suggestions in the stats view
+
+See [`SUPABASE_SETUP.md`](./SUPABASE_SETUP.md) for SQL, auth provider setup, and env vars.
+
 ## Getting Started
 
 **Requires:** Node.js (download from [nodejs.org](https://nodejs.org/) if needed)

@@ -1,5 +1,17 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { loadFromRTDB, subscribeToRTDB, saveToRTDB, deleteFromRTDB, signInWithGoogle, signOut, onAuthReady, addPlayerToRTDB } from './rtdbStorage';
+import {
+  loadFromRTDB,
+  subscribeToRTDB,
+  saveToRTDB,
+  deleteFromRTDB,
+  signInWithGoogle,
+  signOut,
+  onAuthReady,
+  addPlayerToRTDB,
+  claimPlayerToRTDB,
+  getStorageProviderName,
+} from './rtdbStorage';
+import { getGeminiCoachingTip, isGeminiConfigured } from './geminiUtils';
 
 // ═══════════════════════════════════════════════════════════════
 //  CS:GO RANKED TRACKER — COMPETITIVE FITNESS SCOREBOARD
@@ -201,6 +213,7 @@ function RoundHistoryBar({person,scores:sc,weekDates,today,C}){
 export default function App(){
   const[players,setPlayers]=useState([]);
   const[scores,setScores]=useState({});
+  const[userBindings,setUserBindings]=useState({});
   const[activeUser,setActiveUser]=useState(null);
   const[loaded,setLoaded]=useState(false);
   const[newName,setNewName]=useState("");
@@ -220,15 +233,29 @@ export default function App(){
   const[adminError,setAdminError]=useState("");
   const[authUser,setAuthUser]=useState(null);
   const[signInError,setSignInError]=useState("");
+  const[geminiTip,setGeminiTip]=useState("");
+  const[geminiError,setGeminiError]=useState("");
+  const[geminiLoading,setGeminiLoading]=useState(false);
 
   const C=theme==="warroom"?WARROOM:CSGO;
   const adminEnabled=!!import.meta.env.VITE_ADMIN_PASSWORD;
+  const storageProviderName=getStorageProviderName();
+  const geminiReady=isGeminiConfigured();
   const width=useWindowWidth();
   const isMobile=width<640;
   const today=toDateStr(new Date());
   const weekDates=getWeekDates(0);
   const dayOfWeek=new Date().getDay();
   const daysLeft=dayOfWeek===0?0:7-dayOfWeek;
+  const authUserId=authUser?.uid||authUser?.id||null;
+  const boundPlayer=authUserId?(userBindings[authUserId]||null):null;
+  const claimedByPlayer=useMemo(()=>{
+    const claimed={};
+    Object.entries(userBindings).forEach(([uid,name])=>{
+      if(typeof name==="string"&&name)claimed[name]=uid;
+    });
+    return claimed;
+  },[userBindings]);
 
   // ─── Auth state ───
   useEffect(() => {
@@ -238,7 +265,10 @@ export default function App(){
         setLoaded(false);
         setPlayers([]);
         setScores({});
+        setUserBindings({});
         setActiveUser(null);
+        setGeminiTip("");
+        setGeminiError("");
       }
     });
   }, []);
@@ -252,9 +282,11 @@ export default function App(){
         const data = await loadFromRTDB();
         setPlayers(data.players || []);
         setScores(data.scores || {});
+        setUserBindings(data.userBindings || {});
         unsub = subscribeToRTDB((data) => {
           setPlayers(data.players || []);
           setScores(data.scores || {});
+          setUserBindings(data.userBindings || {});
         });
       } catch (e) {
         console.error('RTDB load error:', e);
@@ -267,8 +299,16 @@ export default function App(){
     })();
     return () => { if (unsub) unsub(); };
   }, [authUser]);
-  const save = useCallback(async (p, s) => {
-    try { await saveToRTDB(p, s); } catch (e) { console.error('RTDB save error:', e); }
+  useEffect(()=>{
+    if(!boundPlayer)return;
+    if(activeUser!==boundPlayer)setActiveUser(boundPlayer);
+  },[boundPlayer,activeUser]);
+  useEffect(()=>{
+    setGeminiTip("");
+    setGeminiError("");
+  },[activeUser]);
+  const save = useCallback(async (p, s, bindings) => {
+    try { await saveToRTDB(p, s, bindings); } catch (e) { console.error('RTDB save error:', e); }
   }, []);
   const saveTheme=useCallback(async(t)=>{try{await window.storage.set("csgo-tracker-style-v1",t);}catch(e){}},[]);
 
@@ -370,21 +410,38 @@ export default function App(){
   // ─── Mutations ───
   const addPlayer=async()=>{
     const n=sanitiseOperativeName(newName);
-    if(n&&!players.includes(n)&&players.length<10){
-      try {
+    if(!n)return;
+    if(!players.includes(n)&&players.length>=10)return;
+    try {
+      if(players.includes(n)){
+        await claimPlayerToRTDB(n);
+        setActiveUser(n);
+      }else{
         await addPlayerToRTDB(n);
-        setNewName("");
-        playClick();
-      } catch (e) {
-        console.error('Add player error:', e);
       }
+      setNewName("");
+      playClick();
+    } catch (e) {
+      console.error('Add player error:', e);
+      alert(e?.message||'Unable to add or claim that profile');
+    }
+  };
+  const claimExistingPlayer=async(name)=>{
+    try{
+      await claimPlayerToRTDB(name);
+      setActiveUser(name);
+      playClick();
+    }catch(e){
+      console.error('Claim player error:',e);
+      alert(e?.message||'Unable to claim this profile');
     }
   };
   const deletePlayer=(p)=>{
     if(!confirm(`Remove player "${p}"? Their data will be lost.`))return;
     const np=players.filter(x=>x!==p);
     const ns={};Object.keys(scores).forEach(k=>{const[,person]=k.split("::");if(person!==p)ns[k]=scores[k];});
-    setPlayers(np);setScores(ns);save(np,ns);
+    const nb={...userBindings};Object.keys(nb).forEach(uid=>{if(nb[uid]===p)delete nb[uid];});
+    setPlayers(np);setScores(ns);setUserBindings(nb);save(np,ns,nb);
     if(activeUser===p)setActiveUser(null);
     playClick();
   };
@@ -421,7 +478,7 @@ export default function App(){
     const v=parseAndValidateScore(editVal,aId),ns={...scores};
     const k=sk(d,p,aId),oldVal=ns[k]||0;
     if(v!==null)ns[k]=v;else delete ns[k];
-    setScores(ns);save(players,ns);setEditCell(null);setEditVal("");
+    setScores(ns);save(players,ns,userBindings);setEditCell(null);setEditVal("");
     // Check for personal best → headshot sound
     const act=ACTIVITIES.find(a=>a.id===aId);
     if(act&&v>oldVal){
@@ -429,10 +486,34 @@ export default function App(){
       if(weekT>=act.weekTarget)playHeadshot();else playClick();
     }
   };
+  const askGeminiCoach=async()=>{
+    if(!activeUser)return;
+    setGeminiLoading(true);setGeminiError("");
+    try{
+      const activityLines=ACTIVITIES.map((a)=>{
+        const total=getWeekTotal(activeUser,a.id);
+        const pct=getPct(activeUser,a);
+        return `- ${a.label}: ${total}/${a.weekTarget} (${pct}%)`;
+      });
+      const leaderboardLines=rankings.map((p,i)=>`${i+1}. ${p}: ${overallPct(p)}%`);
+      const tip=await getGeminiCoachingTip({
+        playerName:activeUser,
+        weekRange:`${weekDates[0]} to ${weekDates[6]}`,
+        activityLines,
+        leaderboardLines,
+      });
+      setGeminiTip(tip);
+      playClick();
+    }catch(e){
+      setGeminiError(e?.message||'Gemini request failed');
+    }finally{
+      setGeminiLoading(false);
+    }
+  };
   const resetAll=async()=>{
     if(!confirm("⚠ RESET ALL DATA? Cannot be undone."))return;
     if(!confirm("This will permanently delete all players and scores. Confirm again?"))return;
-    setPlayers([]);setScores({});setActiveUser(null);
+    setPlayers([]);setScores({});setUserBindings({});setActiveUser(null);
     try { await deleteFromRTDB(); } catch (e) { console.error('RTDB delete error:', e); }
   };
 
@@ -527,6 +608,9 @@ export default function App(){
         </div>
         <div style={{fontSize:12,letterSpacing:2,color:C.textMuted,marginTop:8}}>
           Sign in to join the competition
+        </div>
+        <div style={{fontSize:9,letterSpacing:1,color:C.textMuted,marginTop:6}}>
+          Backend: {storageProviderName.toUpperCase()}
         </div>
       </div>
       <button onClick={async()=>{setSignInError("");try{await signInWithGoogle();}catch(e){setSignInError(e?.message||"Sign-in failed");}}}
@@ -671,19 +755,24 @@ export default function App(){
           </div>
           <div style={{padding:isMobile?12:16}}>
             <div style={{fontSize:10,color:C.textMuted,letterSpacing:1,marginBottom:12,textAlign:"center"}}>
-              Select yourself to log your own scores. Your friend logs theirs separately.
+              {boundPlayer
+                ? `Signed in as ${boundPlayer}. Your friend logs in with their own account.`
+                : "Claim your own player profile. Claimed profiles are locked to each login."}
             </div>
             {players.map((p,i)=>{
               const pct=overallPct(p);
+              const ownerUid=claimedByPlayer[p];
+              const claimedByMe=!!ownerUid&&ownerUid===authUserId;
+              const claimedByOther=!!ownerUid&&!claimedByMe;
               return(
-                <button key={p} onClick={()=>{setActiveUser(p);playClick();}} style={{
+                <button key={p} onClick={()=>{if(!claimedByOther)claimExistingPlayer(p);}} disabled={claimedByOther} style={{
                   width:"100%",background:i%2===0?C.bgLight:"#20202a",
                   border:`1px solid ${C.panelBorder}`,borderRadius:2,
                   padding:"12px 14px",marginBottom:6,display:"flex",alignItems:"center",gap:12,
                   color:C.textPrimary,textAlign:"left",minHeight:54,
-                  transition:"all 0.15s",
+                  transition:"all 0.15s",opacity:claimedByOther?0.55:1,cursor:claimedByOther?"not-allowed":"pointer",
                 }}
-                  onMouseEnter={e=>e.currentTarget.style.borderColor=C.ctBlue+"60"}
+                  onMouseEnter={e=>{if(!claimedByOther)e.currentTarget.style.borderColor=C.ctBlue+"60";}}
                   onMouseLeave={e=>e.currentTarget.style.borderColor=C.panelBorder}
                 >
                   <RankBadge score={pct} size={36} C={C}/>
@@ -694,10 +783,20 @@ export default function App(){
                     </div>
                   </div>
                   <div style={{fontSize:18,fontWeight:700,color:C.ctBlue,letterSpacing:1,...telemetryStyle}}>{pct}%</div>
-                  <div style={{fontSize:14,color:C.textMuted}}>▸</div>
+                  <div style={{fontSize:10,color:claimedByOther?C.red:claimedByMe?C.green:C.textMuted,letterSpacing:1,fontWeight:700,minWidth:62,textAlign:"right"}}>
+                    {claimedByOther?"LOCKED":claimedByMe?"MY PROFILE":"CLAIM ▸"}
+                  </div>
                 </button>
               );
             })}
+            {!boundPlayer&&players.length>0&&players.every((p)=>{
+              const ownerUid=claimedByPlayer[p];
+              return !!ownerUid&&ownerUid!==authUserId;
+            })&&(
+              <div style={{fontSize:9,color:C.textMuted,letterSpacing:1,marginTop:6,textAlign:"center"}}>
+                All listed profiles are already claimed. Ask an admin to add another profile.
+              </div>
+            )}
           </div>
           <button onClick={shareApp} style={{
             width:"100%",marginTop:8,padding:"10px 14px",minHeight:44,
@@ -822,9 +921,15 @@ export default function App(){
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <button onClick={()=>{setActiveUser(null);playClick();}} style={{...btnStyle(false),padding:"5px 10px",fontSize:9}}>
-              {activeUser}  ✕
-            </button>
+            {boundPlayer?(
+              <div style={{...btnStyle(true,C.ctBlue),padding:"5px 10px",fontSize:9,cursor:"default"}}>
+                {boundPlayer}
+              </div>
+            ):(
+              <button onClick={()=>{setActiveUser(null);playClick();}} style={{...btnStyle(false),padding:"5px 10px",fontSize:9}}>
+                {activeUser}  ✕
+              </button>
+            )}
             <button onClick={async()=>{try{await signOut();setActiveUser(null);}catch(e){}}} style={{...btnStyle(false),padding:"5px 10px",fontSize:9}}>
               Sign out
             </button>
@@ -1167,6 +1272,43 @@ export default function App(){
                   </div>
                   <div style={{fontSize:9,color:C.textMuted,letterSpacing:2}}>COMPOSITE</div>
                 </div>
+              </div>
+            </div>
+
+            {/* Gemini coach */}
+            <div style={panelStyle}>
+              <div style={panelHead}>
+                <span style={headText}>GEMINI COACH</span>
+                <span style={{fontSize:9,color:geminiReady?C.green:C.textMuted,letterSpacing:1,fontWeight:700}}>
+                  {geminiReady?"READY":"API KEY NEEDED"}
+                </span>
+              </div>
+              <div style={{padding:isMobile?10:14}}>
+                <button onClick={askGeminiCoach} disabled={!geminiReady||geminiLoading} style={{
+                  ...btnStyle(geminiReady&&!geminiLoading,C.ctBlue),
+                  width:"100%",padding:"10px 12px",fontSize:10,letterSpacing:1.5,
+                  opacity:geminiReady?1:0.65,cursor:geminiReady&&!geminiLoading?"pointer":"not-allowed",
+                }}>
+                  {geminiLoading?"ANALYZING THIS WEEK...":"GET WEEKLY COACHING TIP"}
+                </button>
+                {!geminiReady&&(
+                  <div style={{marginTop:8,fontSize:9,color:C.textMuted,letterSpacing:1}}>
+                    Set VITE_GEMINI_API_KEY to enable Gemini suggestions.
+                  </div>
+                )}
+                {geminiError&&(
+                  <div style={{marginTop:8,fontSize:9,color:C.red,letterSpacing:1}}>
+                    {geminiError}
+                  </div>
+                )}
+                {geminiTip&&(
+                  <div style={{
+                    marginTop:10,padding:"10px 12px",background:C.bgLight,border:`1px solid ${C.panelBorder}`,
+                    borderRadius:2,fontSize:11,color:C.textPrimary,letterSpacing:0.5,whiteSpace:"pre-wrap",lineHeight:1.45,
+                  }}>
+                    {geminiTip}
+                  </div>
+                )}
               </div>
             </div>
 
